@@ -1,112 +1,68 @@
-import os
 import telebot
-import yt_dlp
-from datetime import datetime
-import queue
-import threading
+import subprocess
+import os
+from flask import Flask
 
-# 🔑 PON TU TOKEN AQUÍ (de @BotFather)
-TOKEN = "8941299155:AAEUE2wO7FF-VGickwM0TVYYzDPcvzp4VyI"
+# ---------- CONFIGURACIÓN DEL BOT ----------
+TOKEN = "8941299155:AAEUE2wO7FF-VGickwM0TVYYzDPcvzp4VyI"  # ← Pon tu token real aquí
 bot = telebot.TeleBot(TOKEN)
 
-# 📋 COLA — atiende de a uno, sin chocar
-cola_tareas = queue.Queue()
+# ---------- COMANDO /START ----------
+@bot.message_handler(commands=['start'])
+def bienvenida(mensaje):
+    bot.reply_to(mensaje, "👋 ¡Hola! Envíame un enlace de Bigo Live, Kick o Clapper y grabaré la transmisión.")
 
-def trabajador():
-    while True:
-        mensaje = cola_tareas.get()
-        try:
-            procesar_mensaje(mensaje)
-        except Exception as e:
-            bot.reply_to(mensaje, f"❌ Error: {str(e)}")
-        finally:
-            cola_tareas.task_done()
-
-# ▶️ Iniciar la cola en segundo plano
-hilo = threading.Thread(target=trabajador, daemon=True)
-hilo.start()
-
-def procesar_mensaje(message):
-    url = message.text.strip()
-    usuario = message.from_user.username or f"usuario_{message.from_user.id}"
-    fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # ❌ No es TikTok
-    if "tiktok.com" not in url:
-        bot.reply_to(message, "❌ Envíame un enlace de TikTok")
+# ---------- GRABAR TRANSMISIÓN ----------
+@bot.message_handler(func=lambda msg: True)
+def grabar(mensaje):
+    url = mensaje.text.strip()
+    
+    if not any(plataforma in url for plataforma in ['bigo.tv', 'kick.com', 'clapperapp.com']):
+        bot.reply_to(mensaje, "❌ Solo soporto enlaces de Bigo Live, Kick y Clapper")
         return
-
-    # 🔴 ES EN VIVO
-    if "/live" in url or "live.tiktok.com" in url:
-        bot.reply_to(message, f"🔴 EN VIVO DETECTADO\n👤 Usuario: @{usuario}\n✅ Grabando en MÁXIMA CALIDAD...\n⏳ Te lo envío al terminar!")
-        
-        nombre_archivo = f"live_{usuario}_{fecha}.mp4"
-        
-        opts_live = {
-            "format": "best",  # 🔥 MÁXIMA CALIDAD
-            "outtmpl": nombre_archivo,
-            "quiet": False,
-            "no_warnings": True,
-            "format_sort": ["filesize:1800M"]  # ✅ No pasa de 1.8 GB
-        }
-        
-        with yt_dlp.YoutubeDL(opts_live) as ydl:
-            ydl.download([url])
-        
-        # Enviar
-        with open(nombre_archivo, "rb") as f:
-            bot.send_video(message.chat.id, f, caption=f"✅ Grabación lista\n📁 {nombre_archivo}")
-        
-        # 🧹 BORRAR SOLO
-        os.remove(nombre_archivo)
-        return
-
-    # 📹 VIDEO NORMAL
-    bot.reply_to(message, f"🔽 Descargando en MÁXIMA CALIDAD...\n👤 Usuario: @{usuario}")
     
-    nombre_archivo = f"video_{usuario}_{fecha}.mp4"
+    bot.reply_to(mensaje, "🎬 Recibiendo enlace... Iniciando grabación ⏳")
     
-    opts = {
-        "format": "best",  # 🔥 MÁXIMA CALIDAD
-        "outtmpl": nombre_archivo,
-        "no_warnings": True,
-        "format_sort": ["filesize:1800M"]
-    }
+    nombre_archivo = "grabacion.mp4"
+    comando = [
+        "yt-dlp",
+        "-o", nombre_archivo,
+        "--no-check-certificates",
+        url
+    ]
     
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.download([url])
-    
-    # Enviar
-    with open(nombre_archivo, "rb") as f:
-        bot.send_video(message.chat.id, f, caption=f"✅ Listo\n📁 {nombre_archivo}")
-    
-    # 🧹 BORRAR SOLO
-    os.remove(nombre_archivo)
+    try:
+        resultado = subprocess.run(comando, capture_output=True, text=True, timeout=600)
+        
+        if os.path.exists(nombre_archivo) and os.path.getsize(nombre_archivo) > 0:
+            bot.reply_to(mensaje, "✅ Grabación lista! Enviando archivo...")
+            with open(nombre_archivo, 'rb') as f:
+                bot.send_document(mensaje.chat.id, f)
+            os.remove(nombre_archivo)
+        else:
+            bot.reply_to(mensaje, "⚠️ No se pudo grabar. La transmisión podría estar privada o no disponible")
+            
+    except Exception as e:
+        bot.reply_to(mensaje, f"❌ Error: {str(e)}")
 
-# 📬 Recibir mensajes y poner en COLA
-@bot.message_handler(func=lambda message: True)
-def recibir(message):
-    cola_tareas.put(message)
-    if cola_tareas.qsize() > 1:
-        bot.reply_to(message, f"✅ En cola — hay {cola_tareas.qsize()} antes que tú, te atiendo enseguida!")
-
-# Comandos
-@bot.message_handler(commands=['start', 'help'])
-def bienvenida(message):
-    bot.reply_to(message, "👋 ¡Hola! Soy tu bot personal\n🔴 Enlaces de live → grabo y te envío\n📹 Videos normales → descargo en máxima calidad\n✅ Te atiendo a ti solo o con más gente, en orden")
-
-# Iniciar
-bot.polling(none_stop=True)
-# Servidor web mínimo para que Render no se queje
-from flask import Flask
+# ---------- SERVIDOR PARA RENDER ----------
 app = Flask(__name__)
 
 @app.route('/')
-def home():
-    return "✅ Bot funcionando!"
+def estado():
+    return "✅ Bot activo y funcionando correctamente!"
 
+# ---------- INICIAR TODO ----------
 if __name__ == "__main__":
-    import os
-    PORT = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=PORT)
+    from threading import Thread
+    
+    # Iniciar el bot en segundo plano
+    def arrancar_bot():
+        bot.infinity_polling()
+    
+    Thread(target=arrancar_bot, daemon=True).start()
+    
+    # Servidor para que Render no se queje
+    puerto = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=puerto)
 
