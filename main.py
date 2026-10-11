@@ -1,63 +1,56 @@
 import telebot
 import subprocess
 import os
-import re
-from flask import Flask
+import threading
 
 # ==============================================
-# 🔑 PON TU TOKEN DE BOTFATHER AQUÍ
+# 🔑 PON TU TOKEN DE @BotFather AQUÍ
 # ==============================================
 TOKEN = "8941299155:AAEUE2wO7FF-VGickwM0TVYYzDPcvzp4VyI"
 bot = telebot.TeleBot(TOKEN)
 
+# Variable para controlar la grabación
+proceso_grabacion = None
+
 # ==============================================
-# 👋 MENSAJE DE BIENVENIDA
+# 👋 BIENVENIDA
 # ==============================================
 @bot.message_handler(commands=['start'])
 def bienvenida(mensaje):
-    bot.reply_to(mensaje, 
-        "👋 ¡Hola! Soy tu Grabador de TikTok 📹\n\n"
-        "Solo mándame el **nombre del creador**\n"
-        "Ejemplo: @nombre_canal o solo el nombre\n\n"
-        "Yo busco la transmisión en vivo y la grabo ✅"
+    bot.reply_to(mensaje,
+        "📹 **Grabador de TikTok**\n\n"
+        "Mándame el nombre del usuario (con o sin @)\n"
+        "Ejemplo: `usuario123` o `@usuario123`\n\n"
+        "Comandos disponibles:\n"
+        "⏹ /detener → Para la grabación en curso"
     )
 
 # ==============================================
-# 🔗 CONSTRUIR ENLACE DESDE EL NOMBRE
+# ⏹ DETENER GRABACIÓN
 # ==============================================
-def obtener_enlace_tiktok(texto):
-    texto = texto.strip()
-    
-    # Si ya puso @, lo limpiamos
-    if texto.startswith('@'):
-        usuario = texto[1:]
-    # Si escribió el enlace completo
-    elif 'tiktok.com' in texto:
-        return texto
-    # Si solo escribió el nombre
+@bot.message_handler(commands=['detener'])
+def detener(mensaje):
+    global proceso_grabacion
+    if proceso_grabacion and proceso_grabacion.poll() is None:
+        proceso_grabacion.terminate()
+        proceso_grabacion.wait()
+        bot.reply_to(mensaje, "⏹ **Grabación detenida** por tu orden ✅")
+        proceso_grabacion = None
     else:
-        usuario = texto
-    
-    # Devolvemos el enlace directo a su perfil en vivo
-    return f"https://www.tiktok.com/@{usuario}/live"
+        bot.reply_to(mensaje, "ℹ️ No hay ninguna grabación en curso")
 
 # ==============================================
-# 🎬 GRABAR POR NOMBRE
+# 🎬 FUNCIÓN DE GRABACIÓN
 # ==============================================
-@bot.message_handler(func=lambda msg: True)
-def grabar_por_nombre(mensaje):
-    texto_recibido = mensaje.text.strip()
+def grabar(mensaje, usuario):
+    global proceso_grabacion
     
-    # Ignorar comandos
-    if texto_recibido.startswith('/'):
-        return
+    url = f"https://www.tiktok.com/@{usuario}/live"
+    nombre_archivo = f"tiktok_{usuario}.mp4"
     
-    bot.reply_to(mensaje, f"🔍 Buscando a: {texto_recibido}... ⏳")
+    bot.reply_to(mensaje, f"🔍 Buscando a: @{usuario}... ⏳")
     
-    url = obtener_enlace_tiktok(texto_recibido)
-    nombre_archivo = "grabacion_tiktok.mp4"
-    
-    # Comando para buscar y descargar
+    # Comando de grabación
     comando = [
         "yt-dlp",
         "--no-playlist",
@@ -69,50 +62,79 @@ def grabar_por_nombre(mensaje):
     ]
     
     try:
-        bot.reply_to(mensaje, "📡 Encontrado! Iniciando grabación... puede tardar varios minutos ⏳")
+        bot.reply_to(mensaje,
+            "📡 Encontrado! Iniciando grabación... ⏳\n"
+            "Puede tardar varios minutos, ten paciencia 😊\n"
+            "Usa /detener si quieres parar"
+        )
         
-        resultado = subprocess.run(comando, capture_output=True, text=True, timeout=3600)
+        proceso_grabacion = subprocess.Popen(
+            comando,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Esperar a que termine
+        proceso_grabacion.wait()
+        
+        # Verificar si fue detenido
+        if proceso_grabacion.returncode == -15:
+            if os.path.exists(nombre_archivo):
+                os.remove(nombre_archivo)
+            return
         
         if os.path.exists(nombre_archivo) and os.path.getsize(nombre_archivo) > 50000:
-            bot.reply_to(mensaje, "✅ ¡Grabación lista! Enviando archivo... 📤")
+            bot.reply_to(mensaje, "✅ **¡Grabación lista!** Enviando archivo... 📤")
             with open(nombre_archivo, 'rb') as f:
                 bot.send_document(mensaje.chat.id, f)
             os.remove(nombre_archivo)
         else:
-            bot.reply_to(mensaje, 
+            bot.reply_to(mensaje,
                 "⚠️ No se pudo grabar. Posibles causas:\n"
                 "🔸 El usuario NO está en vivo ahora\n"
-                "🔸 El nombre está mal escrito\n"
-                "🔸 La transmisión es privada\n"
+                "🔸 Nombre mal escrito\n"
+                "🔸 Transmisión privada o protegida\n"
                 "🔸 TikTok bloqueó el acceso\n\n"
                 "Vuelve a intentar cuando esté en vivo 📹"
             )
             
     except Exception as e:
         bot.reply_to(mensaje, f"❌ Error: {str(e)}")
+    finally:
+        proceso_grabacion = None
 
 # ==============================================
-# 🌐 SERVIDOR PARA RENDER
+# 📩 RECIBIR MENSAJES
 # ==============================================
-app = Flask(__name__)
-
-@app.route('/')
-def estado():
-    return "✅ Grabador de TikTok — Activo y funcionando!"
+@bot.message_handler(func=lambda msg: True)
+def recibir(mensaje):
+    global proceso_grabacion
+    
+    texto = mensaje.text.strip()
+    
+    # Ignorar comandos
+    if texto.startswith('/'):
+        return
+    
+    # Si ya hay una grabación en curso
+    if proceso_grabacion and proceso_grabacion.poll() is None:
+        bot.reply_to(mensaje, "⚠️ Ya hay una grabación en curso. Usa /detener primero")
+        return
+    
+    # Limpiar nombre
+    usuario = texto.lstrip('@')
+    
+    # Iniciar grabación en segundo plano
+    threading.Thread(target=grabar, args=(mensaje, usuario), daemon=True).start()
 
 # ==============================================
 # 🚀 INICIAR BOT
 # ==============================================
 if __name__ == "__main__":
-    from threading import Thread
-    
-    def arrancar_bot():
-        bot.infinity_polling()
-    
-    Thread(target=arrancar_bot, daemon=True).start()
-    
-    puerto = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=puerto)
+    print("✅ Bot de TikTok activo!")
+    bot.infinity_polling()
+
 
 
 
