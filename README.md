@@ -1,1 +1,4 @@
-# bot-grabador-tiktok
+flask==3.0.0
+python-telegram-bot==20.7
+yt-dlp
+gunicorn
