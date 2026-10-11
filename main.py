@@ -6,7 +6,7 @@ import queue
 import threading
 
 # 🔑 PON TU TOKEN AQUÍ (de @BotFather)
-TOKEN = 8941299155:AAEEJTpdH4cJ1d9lakqZkmJYF1glDUONz2g
+TOKEN = "8941299155:AAEUE2wO7FF-VGickwM0TVYYzDPcvzp4VyI"
 bot = telebot.TeleBot(TOKEN)
 
 # 📋 COLA — atiende de a uno, sin chocar
