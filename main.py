@@ -5,7 +5,7 @@ import re
 from flask import Flask
 
 # ==============================================
-# 🔑 CONFIGURACIÓN - PON TU TOKEN AQUÍ
+# 🔑 PON TU TOKEN DE BOTFATHER AQUÍ
 # ==============================================
 TOKEN = "8941299155:AAEUE2wO7FF-VGickwM0TVYYzDPcvzp4VyI"
 bot = telebot.TeleBot(TOKEN)
@@ -15,74 +15,93 @@ bot = telebot.TeleBot(TOKEN)
 # ==============================================
 @bot.message_handler(commands=['start'])
 def bienvenida(mensaje):
-    bot.reply_to(mensaje, "👋 ¡Hola! Soy tu Grabador de Lives 🎬\n\nEnvíame un enlace y grabaré de:\n✅ Bigo Live\n✅ Kick\n✅ Clapper\n✅ TikTok\n✅ Tango Live\n✅ Twitch")
+    bot.reply_to(mensaje, 
+        "👋 ¡Hola! Soy tu Grabador de TikTok 📹\n\n"
+        "Solo mándame el **nombre del creador**\n"
+        "Ejemplo: @nombre_canal o solo el nombre\n\n"
+        "Yo busco la transmisión en vivo y la grabo ✅"
+    )
 
 # ==============================================
-# 🧹 LIMPIAR ENLACES (especialmente TikTok)
+# 🔗 CONSTRUIR ENLACE DESDE EL NOMBRE
 # ==============================================
-def limpiar_enlace(url):
-    url = url.strip()
-    if 'tiktok.com' in url:
-        match = re.search(r'(https?://[^\s]+tiktok\.com/[^\s?]+)', url)
-        if match:
-            return match.group(1)
-    return url
+def obtener_enlace_tiktok(texto):
+    texto = texto.strip()
+    
+    # Si ya puso @, lo limpiamos
+    if texto.startswith('@'):
+        usuario = texto[1:]
+    # Si escribió el enlace completo
+    elif 'tiktok.com' in texto:
+        return texto
+    # Si solo escribió el nombre
+    else:
+        usuario = texto
+    
+    # Devolvemos el enlace directo a su perfil en vivo
+    return f"https://www.tiktok.com/@{usuario}/live"
 
 # ==============================================
-# 🎬 FUNCIÓN PRINCIPAL DE GRABACIÓN
+# 🎬 GRABAR POR NOMBRE
 # ==============================================
 @bot.message_handler(func=lambda msg: True)
-def grabar_transmision(mensaje):
-    url_entrada = mensaje.text.strip()
-    url = limpiar_enlace(url_entrada)
+def grabar_por_nombre(mensaje):
+    texto_recibido = mensaje.text.strip()
     
-    # Plataformas soportadas
-    plataformas = ['bigo.tv', 'kick.com', 'clapperapp.com', 'tiktok.com', 'tango.live', 'twitch.tv']
-    
-    if not any(sitio in url for sitio in plataformas):
-        bot.reply_to(mensaje, "❌ Solo acepto enlaces de:\n✅ Bigo Live\n✅ Kick\n✅ Clapper\n✅ TikTok\n✅ Tango Live\n✅ Twitch")
+    # Ignorar comandos
+    if texto_recibido.startswith('/'):
         return
     
-    bot.reply_to(mensaje, "🎬 Recibido... iniciando grabación ⏳\nEsto puede tardar unos minutos...")
+    bot.reply_to(mensaje, f"🔍 Buscando a: {texto_recibido}... ⏳")
     
-    nombre_archivo = "grabacion.mp4"
+    url = obtener_enlace_tiktok(texto_recibido)
+    nombre_archivo = "grabacion_tiktok.mp4"
     
-    # Comando mejorado
+    # Comando para buscar y descargar
     comando = [
         "yt-dlp",
         "--no-playlist",
         "--no-check-certificates",
-        "--socket-timeout", "300",
+        "--live-from-start",
         "-f", "best",
         "-o", nombre_archivo,
         url
     ]
     
     try:
-        resultado = subprocess.run(comando, capture_output=True, text=True, timeout=1800)
+        bot.reply_to(mensaje, "📡 Encontrado! Iniciando grabación... puede tardar varios minutos ⏳")
         
-        if os.path.exists(nombre_archivo) and os.path.getsize(nombre_archivo) > 10000:
+        resultado = subprocess.run(comando, capture_output=True, text=True, timeout=3600)
+        
+        if os.path.exists(nombre_archivo) and os.path.getsize(nombre_archivo) > 50000:
             bot.reply_to(mensaje, "✅ ¡Grabación lista! Enviando archivo... 📤")
             with open(nombre_archivo, 'rb') as f:
                 bot.send_document(mensaje.chat.id, f)
             os.remove(nombre_archivo)
         else:
-            bot.reply_to(mensaje, "⚠️ No se pudo grabar. Posibles causas:\n🔸 La transmisión ya terminó\n🔸 Es privada o requiere inicio de sesión\n🔸 TikTok bloqueó el acceso\n\nIntenta con un enlace que esté EN VIVO ahora 📹")
+            bot.reply_to(mensaje, 
+                "⚠️ No se pudo grabar. Posibles causas:\n"
+                "🔸 El usuario NO está en vivo ahora\n"
+                "🔸 El nombre está mal escrito\n"
+                "🔸 La transmisión es privada\n"
+                "🔸 TikTok bloqueó el acceso\n\n"
+                "Vuelve a intentar cuando esté en vivo 📹"
+            )
             
     except Exception as e:
         bot.reply_to(mensaje, f"❌ Error: {str(e)}")
 
 # ==============================================
-# 🌐 SERVIDOR PARA QUE RENDER NO SE QUEJE
+# 🌐 SERVIDOR PARA RENDER
 # ==============================================
 app = Flask(__name__)
 
 @app.route('/')
 def estado():
-    return "✅ Grabador de Lives — Activo y funcionando!"
+    return "✅ Grabador de TikTok — Activo y funcionando!"
 
 # ==============================================
-# 🚀 INICIAR TODO
+# 🚀 INICIAR BOT
 # ==============================================
 if __name__ == "__main__":
     from threading import Thread
@@ -94,6 +113,7 @@ if __name__ == "__main__":
     
     puerto = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=puerto)
+
 
 
 
