@@ -1,98 +1,99 @@
-from flask import Flask, request
+import os
 import telebot
 import yt_dlp
-import os
+from datetime import datetime
+import queue
+import threading
 
-app = Flask(__name__)
+# 🔑 PON TU TOKEN AQUÍ (de @BotFather)
+TOKEN = 8941299155:AAEEJTpdH4cJ1d9lakqZkmJYF1glDUONz2g
+bot = telebot.TeleBot(TOKEN)
 
-# Tu token de Telegram
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-bot = telebot.TeleBot(BOT_TOKEN)
+# 📋 COLA — atiende de a uno, sin chocar
+cola_tareas = queue.Queue()
 
-@bot.message_handler(commands=['start', 'help'])
-def bienvenida(message):
-    bot.reply_to(message, "👋 ¡Hola! Envíame un enlace de TikTok y te lo descargo 📥")
-
-@bot.message_handler(func=lambda message: True)
-def descargar_tiktok(message):
-    url = message.text
-    if "tiktok.com" not in url:
-        bot.reply_to(message, "❌ Por favor envíame un enlace de TikTok")
-        return
-            # Detectar si es un EN VIVO
-    if "/live" in url or "live.tiktok.com" in url:
-        bot.reply_to(message, "🔴 Detecté un EN VIVO — empezando a grabar...\n⏳ Espera hasta que termine para enviarte el video!")
+def trabajador():
+    while True:
+        mensaje = cola_tareas.get()
         try:
-            opts_live = {
-                "format": "best",
-                "outtmpl": "live_grabado.mp4",
-                "quiet": False
-            }
-            with yt_dlp.YoutubeDL(opts_live) as ydl:
-                ydl.download([url])
-            with open("live_grabado.mp4", "rb") as f:
-                bot.send_video(message.chat.id, f)
-            import os
-            os.remove("live_grabado.mp4")
+            procesar_mensaje(mensaje)
         except Exception as e:
-            bot.reply_to(message, f"❌ Error al grabar: {str(e)}")
+            bot.reply_to(mensaje, f"❌ Error: {str(e)}")
+        finally:
+            cola_tareas.task_done()
+
+# ▶️ Iniciar la cola en segundo plano
+hilo = threading.Thread(target=trabajador, daemon=True)
+hilo.start()
+
+def procesar_mensaje(message):
+    url = message.text.strip()
+    usuario = message.from_user.username or f"usuario_{message.from_user.id}"
+    fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # ❌ No es TikTok
+    if "tiktok.com" not in url:
+        bot.reply_to(message, "❌ Envíame un enlace de TikTok")
         return
 
-    
-    bot.reply_to(message, "🔄 Descargando... un momento ⏳")
-    
-    try:
-        # Configuración de descarga
-        opts = {
-            'format': 'best',
-            'outtmpl': 'video.mp4',
-            'no_warnings': True,
+    # 🔴 ES EN VIVO
+    if "/live" in url or "live.tiktok.com" in url:
+        bot.reply_to(message, f"🔴 EN VIVO DETECTADO\n👤 Usuario: @{usuario}\n✅ Grabando en MÁXIMA CALIDAD...\n⏳ Te lo envío al terminar!")
+        
+        nombre_archivo = f"live_{usuario}_{fecha}.mp4"
+        
+        opts_live = {
+            "format": "best",  # 🔥 MÁXIMA CALIDAD
+            "outtmpl": nombre_archivo,
+            "quiet": False,
+            "no_warnings": True,
+            "format_sort": ["filesize:1800M"]  # ✅ No pasa de 1.8 GB
         }
         
-        with yt_dlp.YoutubeDL(opts) as ydl:
+        with yt_dlp.YoutubeDL(opts_live) as ydl:
             ydl.download([url])
         
-        # Enviar el video
-        with open('video.mp4', 'rb') as f:
-            bot.send_video(message.chat.id, f)
+        # Enviar
+        with open(nombre_archivo, "rb") as f:
+            bot.send_video(message.chat.id, f, caption=f"✅ Grabación lista\n📁 {nombre_archivo}")
         
-        # Borrar el archivo después de enviar
-        os.remove('video.mp4')
-        
-    except Exception as e:
-        bot.reply_to(message, f"❌ Error al descargar: {str(e)}")
+        # 🧹 BORRAR SOLO
+        os.remove(nombre_archivo)
+        return
 
-# Webhook para Render
-@app.route('/' + BOT_TOKEN, methods=['POST'])
-def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
-    bot.process_new_updates([update])
-    return "OK", 200
+    # 📹 VIDEO NORMAL
+    bot.reply_to(message, f"🔽 Descargando en MÁXIMA CALIDAD...\n👤 Usuario: @{usuario}")
+    
+    nombre_archivo = f"video_{usuario}_{fecha}.mp4"
+    
+    opts = {
+        "format": "best",  # 🔥 MÁXIMA CALIDAD
+        "outtmpl": nombre_archivo,
+        "no_warnings": True,
+        "format_sort": ["filesize:1800M"]
+    }
+    
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([url])
+    
+    # Enviar
+    with open(nombre_archivo, "rb") as f:
+        bot.send_video(message.chat.id, f, caption=f"✅ Listo\n📁 {nombre_archivo}")
+    
+    # 🧹 BORRAR SOLO
+    os.remove(nombre_archivo)
 
-@app.route('/')
-def index():
-    return "✅ Bot funcionando!"
+# 📬 Recibir mensajes y poner en COLA
+@bot.message_handler(func=lambda message: True)
+def recibir(message):
+    cola_tareas.put(message)
+    if cola_tareas.qsize() > 1:
+        bot.reply_to(message, f"✅ En cola — hay {cola_tareas.qsize()} antes que tú, te atiendo enseguida!")
 
-if __name__ == "__main__":
-    # Configurar webhook
-    RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
-    if RENDER_URL:
-        bot.remove_webhook()
-        bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-import os
+# Comandos
+@bot.message_handler(commands=['start', 'help'])
+def bienvenida(message):
+    bot.reply_to(message, "👋 ¡Hola! Soy tu bot personal\n🔴 Enlaces de live → grabo y te envío\n📹 Videos normales → descargo en máxima calidad\n✅ Te atiendo a ti solo o con más gente, en orden")
 
-# Función para grabar lives de TikTok
-def grabar_tiktok_live(enlace):
-    try:
-        salida = "tiktok_live.mp4"
-        ydl_opts = {
-            "format": "best",
-            "outtmpl": salida,
-            "quiet": False
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([enlace])
-        return salida
-    except Exception as e:
-        return f"Error al grabar: {str(e)}"
+# Iniciar
+bot.polling(none_stop=True)
