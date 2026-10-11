@@ -1,4 +1,3 @@
-
 from flask import Flask, request
 import telebot
 import yt_dlp
@@ -20,6 +19,25 @@ def descargar_tiktok(message):
     if "tiktok.com" not in url:
         bot.reply_to(message, "❌ Por favor envíame un enlace de TikTok")
         return
+            # Detectar si es un EN VIVO
+    if "/live" in url or "live.tiktok.com" in url:
+        bot.reply_to(message, "🔴 Detecté un EN VIVO — empezando a grabar...\n⏳ Espera hasta que termine para enviarte el video!")
+        try:
+            opts_live = {
+                "format": "best",
+                "outtmpl": "live_grabado.mp4",
+                "quiet": False
+            }
+            with yt_dlp.YoutubeDL(opts_live) as ydl:
+                ydl.download([url])
+            with open("live_grabado.mp4", "rb") as f:
+                bot.send_video(message.chat.id, f)
+            import os
+            os.remove("live_grabado.mp4")
+        except Exception as e:
+            bot.reply_to(message, f"❌ Error al grabar: {str(e)}")
+        return
+
     
     bot.reply_to(message, "🔄 Descargando... un momento ⏳")
     
@@ -62,3 +80,19 @@ if __name__ == "__main__":
         bot.remove_webhook()
         bot.set_webhook(url=f"{RENDER_URL}/{BOT_TOKEN}")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+import os
+
+# Función para grabar lives de TikTok
+def grabar_tiktok_live(enlace):
+    try:
+        salida = "tiktok_live.mp4"
+        ydl_opts = {
+            "format": "best",
+            "outtmpl": salida,
+            "quiet": False
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([enlace])
+        return salida
+    except Exception as e:
+        return f"Error al grabar: {str(e)}"
