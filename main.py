@@ -3,33 +3,28 @@ import subprocess
 import os
 from flask import Flask
 
-# ---------- CONFIGURACIÓN DEL BOT ----------
-TOKEN = "8941299155:AAEUE2wO7FF-VGickwM0TVYYzDPcvzp4VyI"  # ← Pon tu token real aquí
+# ---------- PON TU TOKEN AQUÍ ----------
+TOKEN = "8941299155:AAEUE2wO7FF-VGickwM0TVYYzDPcvzp4VyI"
 bot = telebot.TeleBot(TOKEN)
 
 # ---------- COMANDO /START ----------
 @bot.message_handler(commands=['start'])
 def bienvenida(mensaje):
-    bot.reply_to(mensaje, "👋 ¡Hola! Envíame un enlace de Bigo Live, Kick o Clapper y grabaré la transmisión.")
+    bot.reply_to(mensaje, "👋 Hola! Envíame un enlace de Bigo Live, Kick o Clapper y grabaré la transmisión.")
 
 # ---------- GRABAR TRANSMISIÓN ----------
 @bot.message_handler(func=lambda msg: True)
 def grabar(mensaje):
     url = mensaje.text.strip()
     
-    if not any(plataforma in url for plataforma in ['bigo.tv', 'kick.com', 'clapperapp.com']):
-        bot.reply_to(mensaje, "❌ Solo soporto enlaces de Bigo Live, Kick y Clapper")
+    if not any(sitio in url for sitio in ['bigo.tv', 'kick.com', 'clapperapp.com']):
+        bot.reply_to(mensaje, "❌ Solo acepto enlaces de Bigo Live, Kick y Clapper")
         return
     
-    bot.reply_to(mensaje, "🎬 Recibiendo enlace... Iniciando grabación ⏳")
+    bot.reply_to(mensaje, "🎬 Recibido... iniciando grabación ⏳")
     
     nombre_archivo = "grabacion.mp4"
-    comando = [
-        "yt-dlp",
-        "-o", nombre_archivo,
-        "--no-check-certificates",
-        url
-    ]
+    comando = ["yt-dlp", "-o", nombre_archivo, "--no-check-certificates", url]
     
     try:
         resultado = subprocess.run(comando, capture_output=True, text=True, timeout=600)
@@ -40,7 +35,7 @@ def grabar(mensaje):
                 bot.send_document(mensaje.chat.id, f)
             os.remove(nombre_archivo)
         else:
-            bot.reply_to(mensaje, "⚠️ No se pudo grabar. La transmisión podría estar privada o no disponible")
+            bot.reply_to(mensaje, "⚠️ No se pudo grabar. La transmisión podría estar privada o ya terminó")
             
     except Exception as e:
         bot.reply_to(mensaje, f"❌ Error: {str(e)}")
@@ -56,13 +51,12 @@ def estado():
 if __name__ == "__main__":
     from threading import Thread
     
-    # Iniciar el bot en segundo plano
     def arrancar_bot():
         bot.infinity_polling()
     
     Thread(target=arrancar_bot, daemon=True).start()
     
-    # Servidor para que Render no se queje
     puerto = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=puerto)
+
 
