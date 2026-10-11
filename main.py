@@ -10,24 +10,34 @@ bot = telebot.TeleBot(TOKEN)
 # ---------- COMANDO /START ----------
 @bot.message_handler(commands=['start'])
 def bienvenida(mensaje):
-    bot.reply_to(mensaje, "👋 Hola! Envíame un enlace de Bigo Live, Kick o Clapper y grabaré la transmisión.")
+    bot.reply_to(mensaje, "👋 ¡Hola! Envíame un enlace y grabaré la transmisión de:\n✅ Bigo Live\n✅ Kick\n✅ Clapper\n✅ TikTok\n✅ Tango Live\n✅ Twitch")
 
 # ---------- GRABAR TRANSMISIÓN ----------
 @bot.message_handler(func=lambda msg: True)
 def grabar(mensaje):
     url = mensaje.text.strip()
     
-    if not any(sitio in url for sitio in ['bigo.tv', 'kick.com', 'clapperapp.com']):
-        bot.reply_to(mensaje, "❌ Solo acepto enlaces de Bigo Live, Kick y Clapper")
+    plataformas = [
+        'bigo.tv', 'kick.com', 'clapperapp.com',
+        'tiktok.com', 'tango.live', 'twitch.tv'
+    ]
+    
+    if not any(sitio in url for sitio in plataformas):
+        bot.reply_to(mensaje, "❌ Solo acepto enlaces de:\n✅ Bigo Live\n✅ Kick\n✅ Clapper\n✅ TikTok\n✅ Tango Live\n✅ Twitch")
         return
     
     bot.reply_to(mensaje, "🎬 Recibido... iniciando grabación ⏳")
     
     nombre_archivo = "grabacion.mp4"
-    comando = ["yt-dlp", "-o", nombre_archivo, "--no-check-certificates", url]
+    comando = [
+        "yt-dlp",
+        "-o", nombre_archivo,
+        "--no-check-certificates",
+        url
+    ]
     
     try:
-        resultado = subprocess.run(comando, capture_output=True, text=True, timeout=600)
+        resultado = subprocess.run(comando, capture_output=True, text=True, timeout=1200)
         
         if os.path.exists(nombre_archivo) and os.path.getsize(nombre_archivo) > 0:
             bot.reply_to(mensaje, "✅ Grabación lista! Enviando archivo...")
@@ -35,7 +45,7 @@ def grabar(mensaje):
                 bot.send_document(mensaje.chat.id, f)
             os.remove(nombre_archivo)
         else:
-            bot.reply_to(mensaje, "⚠️ No se pudo grabar. La transmisión podría estar privada o ya terminó")
+            bot.reply_to(mensaje, "⚠️ No se pudo grabar. La transmisión podría estar privada, protegida o ya terminó.")
             
     except Exception as e:
         bot.reply_to(mensaje, f"❌ Error: {str(e)}")
@@ -58,5 +68,6 @@ if __name__ == "__main__":
     
     puerto = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=puerto)
+
 
 
