@@ -1,4 +1,2 @@
-flask==3.0.0
-python-telegram-bot==20.7
-yt-dlp
-gunicorn
+pyTelegramBotAPI==4.22.0
+
